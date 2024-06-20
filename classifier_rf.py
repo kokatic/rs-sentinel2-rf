@@ -10,17 +10,23 @@ import joblib  # For saving the model
 # Define paths
 dataset_path = './dataset/avril'
 reference_image_path = os.path.join(dataset_path, 'T32SKC_20240430T102021_B02_10m.jp2')
-shapefile_path = './features/features.shp'
+geojson_path = './features/features.geojson'
 output_raster_path = './output/rasterized_labels.tif'
 model_path = './output/random_forest_model.pkl'
+output_classified_raster_path = './output/classified_image.tif'
+
+# Create necessary directories if they don't exist
+os.makedirs(os.path.dirname(output_raster_path), exist_ok=True)
+os.makedirs(os.path.dirname(model_path), exist_ok=True)
+os.makedirs(os.path.dirname(output_classified_raster_path), exist_ok=True)
 
 # Get band files
 band_files = sorted([f for f in os.listdir(dataset_path) if f.endswith('.jp2')])
 
-# Read shapefile
-gdf = gpd.read_file(shapefile_path)
+# Read GeoJSON
+gdf = gpd.read_file(geojson_path)
 
-# Define unique values in the type_nom column
+# Define unique values in the type_num column
 unique_values = gdf['type_num'].unique()
 
 # Load reference image to get shape and transform
@@ -31,9 +37,9 @@ with rasterio.open(reference_image_path) as src:
 # Create a dictionary to map unique values to pixel values
 type_to_pixel = {value: idx + 1 for idx, value in enumerate(unique_values)}
 
-# Rasterize geometries based on type_nom values
+# Rasterize geometries based on type_num values
 rasterized_labels = features.rasterize(
-    ((mapping(geom), type_to_pixel[type_nom]) for geom, type_nom in zip(gdf.geometry, gdf['type_num'])),
+    ((mapping(geom), type_to_pixel[type_num]) for geom, type_num in zip(gdf.geometry, gdf['type_num'])),
     out_shape=out_shape,
     transform=transform,
     fill=0,
@@ -79,7 +85,6 @@ print("Random Forest model trained and saved to:", model_path)
 predicted_labels = rf_model.predict(bands_data).reshape(out_shape)
 
 # Write the classified raster to file
-output_classified_raster_path = './output/classified_image.tif'
 with rasterio.open(output_classified_raster_path, 'w', driver='GTiff', width=out_shape[1], height=out_shape[0],
                    count=1, dtype=rasterio.uint8, crs=src.crs, transform=transform) as dst:
     dst.write(predicted_labels, 1)
